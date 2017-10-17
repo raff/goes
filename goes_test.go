@@ -41,7 +41,8 @@ func (s *GoesTestSuite) SetUpTest(c *C) {
 
 func (s *GoesTestSuite) TestNewClient(c *C) {
 	conn := NewClient(ESHost, ESPort)
-	c.Assert(conn, DeepEquals, &Client{ESHost, ESPort, http.DefaultClient, ""})
+	esURL, _ := url.Parse("http://" + ESHost + ":" + ESPort)
+	c.Assert(conn, DeepEquals, &Client{esURL, http.DefaultClient, ""})
 }
 
 func (s *GoesTestSuite) TestWithHTTPClient(c *C) {
@@ -53,8 +54,9 @@ func (s *GoesTestSuite) TestWithHTTPClient(c *C) {
 		Transport: tr,
 	}
 	conn := NewClient(ESHost, ESPort).WithHTTPClient(cl)
+	esURL, _ := url.Parse("http://" + ESHost + ":" + ESPort)
 
-	c.Assert(conn, DeepEquals, &Client{ESHost, ESPort, cl, ""})
+	c.Assert(conn, DeepEquals, &Client{esURL, cl, ""})
 	c.Assert(conn.Client.Transport.(*http.Transport).DisableCompression, Equals, true)
 	c.Assert(conn.Client.Transport.(*http.Transport).ResponseHeaderTimeout, Equals, 1*time.Second)
 }
@@ -1321,9 +1323,26 @@ func (s *GoesTestSuite) TestGetMapping(c *C) {
 
 	time.Sleep(300 * time.Millisecond)
 
-	response, err := conn.GetMapping([]string{docType}, []string{indexName})
+	response, err := conn.GetMapping(nil, []string{indexName})
+	c.Log("response ", response.Raw)
 	c.Assert(err, Equals, nil)
-	c.Assert(len(response.Raw), Equals, 0)
+
+	var m map[string]interface{}
+
+	/*
+	   {
+	       indexName: {
+	           "mappings": {}
+	       }
+	   }
+	*/
+
+	c.Assert(len(response.Raw), Equals, 1)
+	m, ok := response.Raw[indexName].(map[string]interface{})
+	c.Assert(ok, Equals, true)
+	m, ok = m["mappings"].(map[string]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(len(m), Equals, 0) // no mapping here
 
 	d := Document{
 		Index: indexName,
@@ -1340,7 +1359,26 @@ func (s *GoesTestSuite) TestGetMapping(c *C) {
 
 	response, err = conn.GetMapping([]string{docType}, []string{indexName})
 	c.Assert(err, Equals, nil)
-	c.Assert(len(response.Raw), Not(Equals), 0)
+
+	/*
+	   {
+	       indexName: {
+	           "mappings": {
+	               docType: {
+	                   "properties": {
+	                       ...
+	                   }
+	               }
+	           }
+	       }
+	   }
+	*/
+	c.Assert(len(response.Raw), Equals, 1)
+	m, ok = response.Raw[indexName].(map[string]interface{})
+	c.Assert(ok, Equals, true)
+	m, ok = m["mappings"].(map[string]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(len(m), Equals, 1) // mapping for docType
 }
 
 func (s *GoesTestSuite) TestDeleteMapping(c *C) {

@@ -34,7 +34,22 @@ func (err *SearchError) Error() string {
 // This function is pretty useless for now but might be useful in a near future
 // if wee need more features like connection pooling or load balancing.
 func NewClient(host string, port string) *Client {
-	return &Client{host, port, http.DefaultClient, ""}
+	if !strings.Contains(host, "://") {
+		// no scheme, use HTTP
+		host = "http://" + host
+	}
+	if strings.HasPrefix(port, ":") {
+		host += port
+	} else {
+		host += ":" + port
+	}
+	hosturl, err := url.Parse(host)
+	if err != nil {
+		// should throw an error
+		return nil
+	}
+
+	return &Client{hosturl, http.DefaultClient, ""}
 }
 
 // WithHTTPClient sets the http.Client to be used with the connection. Returns the original client.
@@ -574,8 +589,7 @@ func (c *Client) AliasExists(alias string) (bool, error) {
 }
 
 func (c *Client) replaceHost(req *http.Request) {
-	req.URL.Scheme = "http"
-	req.URL.Host = fmt.Sprintf("%s:%s", c.Host, c.Port)
+	req.URL = c.Host.ResolveReference(req.URL)
 }
 
 // DoRaw Does the provided requeset and returns the raw bytes and the status code of the response
